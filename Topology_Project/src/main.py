@@ -44,7 +44,7 @@ Generate a JSON object that describes a codebase with the following properties:
 """
 
 def main():
-    provider = "openai"  # Change to "openai" or "groq"
+    provider = "groq"  # Change to "openai" or "groq"
     model_name = "llama3-70b-8192" if provider == "groq" else "o3-mini"
 
     client = setup_client(provider)
