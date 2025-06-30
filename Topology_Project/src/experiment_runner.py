@@ -15,7 +15,7 @@ class CodePropertiesWithTests(BaseModel):
     adjacency: dict
     tests: dict
 
-def run_topology_experiment_with_provider(topology_mode, codebase_generator, client, structured_prompt, structured_prompt_2, ai_data, avg_length, num_changes, provider, model, debug_callback=None):
+def run_topology_experiment_with_provider(topology_mode, codebase_generator, client, structured_prompt, structured_prompt_2, ai_data, avg_length, num_changes, provider, model, debug_callback=None,use_semantics=False):
     for obj_count in range(10, 51, 5):
         code, nodes, adj = codebase_generator(
             num_objects=obj_count,
@@ -58,23 +58,28 @@ def run_topology_experiment_with_provider(topology_mode, codebase_generator, cli
             parsed = json.loads(reply)
             validated = CodeProperties(**parsed)
 
-            parsed["nodes"] = [int(n.split("_")[-1]) for n in parsed["nodes"] if isinstance(n, str) and n != "main"]
-            new_from, new_to = [], []
-            for f, t in zip(parsed["adjacency"]["from"], parsed["adjacency"]["to"]):
-                if f != "main" and t != "main":
-                    try:
-                        new_to.append(int(f.split("_")[-1]))
-                        new_from.append(int(t.split("_")[-1]))
-                    except Exception:
-                        continue
-            parsed["adjacency"]["from"] = new_from
-            parsed["adjacency"]["to"] = new_to
+            if not isinstance(parsed.get("adjacency"), dict):
+                raise ValueError("LLM response missing 'adjacency' dict")
+            from_list = parsed["adjacency"].get("from")
+            to_list = parsed["adjacency"].get("to")
+
+            if not isinstance(from_list, list) or not isinstance(to_list, list):
+                raise ValueError("'from' and 'to' must be lists")
+
+            if len(from_list) != len(to_list):
+                raise ValueError("Mismatch in 'from' and 'to' lengths")
+
+            parsed["adjacency"] = {
+                "from": [int(f) for f in from_list if isinstance(f, int) or (isinstance(f, str) and f.isdigit())],
+                "to": [int(t) for t in to_list if isinstance(t, int) or (isinstance(t, str) and t.isdigit())]
+            }
 
             gold_pairs = set(_without_main(_normalise_adj(gold_adj)))
             llm_pairs = set(_without_main(_normalise_adj(parsed["adjacency"])))
             ai_data["Correct Adjacency?"].append(gold_pairs == llm_pairs)
 
         except Exception as e:
+            print("[ERROR - INITIAL EXTRACTION]:", e)
             ai_data["Correct Adjacency?"].append(False)
             ai_data["Number of Changes"].append(0)
             ai_data["Correct After Changes?"].append(False)
@@ -111,7 +116,8 @@ def run_topology_experiment_with_provider(topology_mode, codebase_generator, cli
             ai_data["Pass/Fail Precision"].append(precision)
             ai_data["Exception Match Rate"].append(err_rate)
 
-        except Exception:
+        except Exception as e:
+            print("[ERROR - MODIFIED EXTRACTION]:", e)
             ai_data["Correct After Changes?"].append(False)
 
         log_result(topology_mode.capitalize(), len(nodes), avg_length, tokens, changes, ai_data)
