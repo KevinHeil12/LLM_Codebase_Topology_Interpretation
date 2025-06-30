@@ -21,17 +21,32 @@ def setup_client(provider="openai"):
         raise ValueError(f"Unsupported provider: {provider}")
 
 def send_message(client, provider, messages, model="gpt-4"):
-    if provider == "openai":
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages
-        )
-        return response.choices[0].message.content
-    elif provider == "groq":
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages
-        )
-        return response.choices[0].message.content
-    else:
-        raise ValueError("Unknown provider")
+    print("\n===== SENDING MESSAGE TO LLM =====")
+    print("Model:", model)
+    print("Provider:", provider)
+    print("Messages:", json.dumps(messages, indent=2))
+    print("===================================")
+
+    try:
+        if provider == "openai":
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages
+            )
+        elif provider == "groq":
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages
+            )
+        else:
+            raise ValueError("Unknown provider")
+
+        content = response.choices[0].message.content
+        print("\n===== LLM RESPONSE =====")
+        print(content)
+        print("========================\n")
+        return content
+
+    except Exception as e:
+        print("\n[ERROR] LLM call failed:", str(e))
+        return "{}"  # return empty JSON to prevent crashing
