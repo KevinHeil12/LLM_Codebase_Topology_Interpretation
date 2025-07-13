@@ -56,3 +56,9 @@ def safe_flip(edge_dict):
         return {"from": [], "to": []}          # or raise
     m = min(len(edge_dict["from"]), len(edge_dict["to"]))
     return {"from": edge_dict["to"][:m], "to": edge_dict["from"][:m]}
+
+def compute_match_percentage(gold_pairs, llm_pairs):
+    if not gold_pairs:
+        return 100.0 if not llm_pairs else 0.0
+    correct = len(gold_pairs & llm_pairs)
+    return round(100.0 * correct / len(gold_pairs), 2)
