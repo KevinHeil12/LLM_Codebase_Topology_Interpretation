@@ -1,7 +1,7 @@
 import json
 from src.utils import log_result
 from src.code_analysis import modify_and_extract
-from src.graph_utils import _normalise_adj, _without_main, flip_adjacency, safe_flip
+from src.graph_utils import _normalise_adj, _without_main, flip_adjacency, safe_flip, compute_match_percentage
 from src.test_engine import run_llm_tests, precision_and_err_rate, static_completeness_ok
 from src.llm_interface import send_message
 from pydantic import BaseModel
@@ -76,7 +76,8 @@ def run_topology_experiment_with_provider(topology_mode, codebase_generator, cli
 
             gold_pairs = set(_without_main(_normalise_adj(gold_adj)))
             llm_pairs = set(_without_main(_normalise_adj(parsed["adjacency"])))
-            ai_data["Correct Adjacency?"].append(gold_pairs == llm_pairs)
+            match_percent = compute_match_percentage(gold_pairs, llm_pairs)
+            ai_data["Adjacency Match %"].append(match_percent)
 
         except Exception as e:
             print("[ERROR - INITIAL EXTRACTION]:", e)
