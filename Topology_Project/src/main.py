@@ -22,7 +22,7 @@ FIELDNAMES = [
     "avg_length",
     "input_tokens",
     "num_changes",
-    "correct_initial_adj",
+    "adjacency_match_percentage",
     "correct_adj_after_changes",
     "tests_complete",
     "pf_precision",
