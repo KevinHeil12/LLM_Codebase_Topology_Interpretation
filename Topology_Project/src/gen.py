@@ -293,7 +293,10 @@ def generate_method_body(
     branching_count,
     loop_count,
     dependency_indices,
-    node_list
+    node_list,
+    current_index=None,
+    adjacency_list=None,
+    use_comments=False
 ):
     """
     Build a function/method body that:
@@ -345,11 +348,17 @@ def generate_method_body(
                 random_literal = generate_random_literal(dependency_input_type)
                 lines.append(f"{instance_variable}.run({random_literal})")
 
-    # Finally, transform the input 'parameter' into 'result'
+    # Transform 'parameter' into 'result'
     transformation_code = get_random_transformation_code(input_type, output_type)
     lines.append(transformation_code)
-    lines.append("return result")
 
+    # Optional: Add comment before return
+    if use_comments and current_index is not None and adjacency_list is not None:
+        consumers = [node_list[i][0] for i, parents in enumerate(adjacency_list) if current_index in parents]
+        consumer_str = ', '.join(consumers) if consumers else 'none'
+        lines.append(f"# Returns {output_type}; used by: {consumer_str}")
+
+    lines.append("return result")
     return lines
 
 
@@ -535,7 +544,8 @@ def generate_codebase(
     loop_factor=1,
     connectivity=0.5,
     topology_mode="random",
-    use_semantics=False
+    use_semantics=False,
+    use_comments=False
 ):
     """
     Generate a Python codebase with the given number of objects, approximate average lines,
@@ -592,7 +602,10 @@ def generate_codebase(
                 branching_factor,
                 loop_factor,
                 adjacency_list[index],
-                node_list
+                node_list,
+                current_index=index,
+                adjacency_list=adjacency_list,
+                use_comments=use_comments
             )
             indented_body = "\n".join("    " + line for line in body_lines)
             code_definition = header + "\n" + indented_body + "\n"
@@ -618,7 +631,10 @@ def generate_codebase(
                 branching_factor,
                 loop_factor,
                 adjacency_list[index],
-                node_list
+                node_list,
+                current_index=index,
+                adjacency_list=adjacency_list,
+                use_comments=use_comments
             )
             run_body_lines = ["        " + line for line in run_body_lines]
             class_lines.append(run_header)
@@ -638,7 +654,10 @@ def generate_codebase(
                     branching_factor,
                     loop_factor,
                     [],  # no external dependencies for these extra methods
-                    node_list
+                    node_list,
+                    current_index=index,
+                    adjacency_list=adjacency_list,
+                    use_comments=use_comments
                 )
                 extra_method_body_lines = ["        " + line for line in extra_method_body_lines]
                 class_lines.append(extra_method_header)
@@ -682,13 +701,103 @@ def generate_codebase(
 
     main_function_code = "\n".join(main_lines)
     entry_point_code = """\
-if __name__ == "__main__":
-    main()
-"""
+    if __name__ == "__main__":
+        main()
+    """
 
     complete_code = "\n".join(code_sections) + "\n" + main_function_code + "\n" + entry_point_code
     return complete_code, node_list, adjacency_list
 
+def generate_code_from_nodes(node_list, adjacency_list, use_comments=False):
+    """
+    Regenerate the Python code based on node list and adjacency.
+    Used after mutation.
+    """
+    from gen import generate_method_body, generate_random_literal  # make sure these are importable
+
+    code_sections = []
+    topological_order = remove_cycles_and_get_topological_order(adjacency_list)
+
+    for index, (object_name, object_type, input_type, output_type) in enumerate(node_list):
+        estimated_lines = random.randint(5, 10)
+
+        if object_type == "function":
+            header = f"def {object_name}(parameter):"
+            body_lines = generate_method_body(
+                input_type,
+                output_type,
+                estimated_lines,
+                branching_count=1,
+                loop_count=1,
+                dependency_indices=adjacency_list[index],
+                node_list=node_list,
+                current_index=index,
+                adjacency_list=adjacency_list,
+                use_comments=use_comments
+            )
+            indented = "\n".join("    " + line for line in body_lines)
+            code_sections.append(header + "\n" + indented + "\n")
+
+        else:
+            class_lines = []
+            class_lines.append(f"class {object_name}:")
+
+            class_lines.append("    def __init__(self):")
+            class_lines.append("        pass  # minimal constructor")
+
+            class_lines.append("    def run(self, parameter):")
+            run_body = generate_method_body(
+                input_type,
+                output_type,
+                estimated_lines,
+                1,
+                1,
+                adjacency_list[index],
+                node_list,
+                current_index=index,
+                adjacency_list=adjacency_list,
+                use_comments=use_comments
+            )
+            run_body = ["        " + line for line in run_body]
+            class_lines.extend(run_body)
+
+            code_sections.append("\n".join(class_lines) + "\n")
+
+    main_lines = [
+        "def main():",
+        "    import math, cmath, random",
+        "    results = {}"
+    ]
+
+    for node_index in topological_order:
+        name, obj_type, input_type, output_type = node_list[node_index]
+        parents = adjacency_list[node_index]
+
+        if not parents:
+            lit = generate_random_literal(input_type)
+            main_lines.append(f"    parameter_value = {lit}")
+        else:
+            main_lines.append(f"    parameter_value = results[{parents[0]}]")
+
+            if obj_type == "function":
+                main_lines.append(f"    output_value = {name}(parameter_value)")
+            else:
+                instance = f"instance_{node_index}"
+                main_lines.append(f"    {instance} = {name}()")
+                main_lines.append(f"    output_value = {instance}.run(parameter_value)")
+    
+            main_lines.append(f"    results[{node_index}] = output_value\n")
+    
+        main_lines.append("    print('Execution complete. Results:')")
+        main_lines.append("    for key, value in results.items():")
+        main_lines.append("        print(f'Object {key} output = {value}')")
+    
+        entry_point = """
+    if __name__ == "__main__":
+        main()
+    """
+    
+    return "\n".join(code_sections + main_lines) + entry_point
 
 def main():
     """
