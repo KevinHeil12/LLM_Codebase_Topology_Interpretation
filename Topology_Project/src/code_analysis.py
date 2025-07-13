@@ -1,70 +1,28 @@
 import ast
 import random
+from gen import DATA_TYPES, generate_code_from_nodes
 
-def modify_codebase(code_str: str, num_changes: int = 1):
+def modify_codebase(original_code, node_list, adjacency_list, num_changes, use_comments=False):
     """
-    Randomly rewrites up to num_changes call-sites in code_str, but
-    it will **never** introduce a bare identifier called run().
-
-    Returns
-    -------
-    modified_code : str   the new source
-    changes_made  : int   how many calls were actually rewritten
+    Modify the output type of random nodes, and regenerate the code accordingly.
+    
+    Returns:
+        new_code (str): Updated Python code with new output types
+        num_changes (int): Number of modifications made
+        new_node_list (list): Updated list of nodes with modified output types
+        adjacency_list (list): Unchanged
     """
-    tree = ast.parse(code_str)
+    new_node_list = node_list[:]
+    num_nodes = len(new_node_list)
+    change_indices = random.sample(range(num_nodes), min(num_changes, num_nodes))
 
-    # ── 1. Collect module-level function names ───────────────────────────
-    candidate_names = set()
+    for i in change_indices:
+        name, obj_type, input_type, current_output = new_node_list[i]
+        new_output = random.choice([t for t in DATA_TYPES if t != current_output])
+        new_node_list[i] = (name, obj_type, input_type, new_output)
 
-    class FunctionCollector(ast.NodeVisitor):
-        """
-        Records   def foo(...):         (module level only)
-        Ignores   class C:  def bar(...):
-        """
-        def __init__(self):
-            self.in_class = 0
-
-        def visit_ClassDef(self, node):
-            self.in_class += 1
-            self.generic_visit(node)
-            self.in_class -= 1
-
-        def visit_FunctionDef(self, node):
-            if self.in_class == 0 and node.name not in {"main", "run"}:
-                candidate_names.add(node.name)
-            # still visit body, but we don’t collect nested defs
-            self.generic_visit(node)
-
-    FunctionCollector().visit(tree)
-    pool = list(candidate_names)                     # random.choice needs list
-    if len(pool) < 2:                                # nothing sensible to swap
-        return code_str, 0
-
-    # ── 2. Rewrite call-sites ────────────────────────────────────────────
-    class CallRewriter(ast.NodeTransformer):
-        def __init__(self, pool, limit):
-            self.pool   = pool
-            self.limit  = limit
-            self.made   = 0
-
-        def visit_Call(self, node):
-            if self.made >= self.limit:
-                return self.generic_visit(node)
-
-            # rewrite only bare-name calls that already target a pool func
-            if isinstance(node.func, ast.Name) and node.func.id in self.pool:
-                old = node.func.id
-                choices = [n for n in self.pool if n != old]
-                if choices:
-                    node.func.id = random.choice(choices)
-                    self.made += 1
-            return self.generic_visit(node)
-
-    rewriter = CallRewriter(pool, num_changes)
-    new_tree = rewriter.visit(tree)
-    ast.fix_missing_locations(new_tree)
-
-    return ast.unparse(new_tree), rewriter.made
+    new_code = generate_code_from_nodes(new_node_list, adjacency_list, use_comments=use_comments)
+    return new_code, len(change_indices), new_node_list, adjacency_list
 
 def extract_graph(code_str):
     """
